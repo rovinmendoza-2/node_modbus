@@ -155,8 +155,8 @@ async function ejecutarLectura() {
 
   // --- Lecturas Modbus Individuales ---
   // console.log("Iniciando lecturas Modbus...");
-  const kw22   = await leerModbusSeguro("holding", "192.168.0.130", 502, 1, 1633, "kw22");
-  const kw21   = await leerModbusSeguro("holding", "192.168.0.120", 502, 1, 1633, "kw21");
+  let kw22   = await leerModbusSeguro("holding", "192.168.0.130", 502, 1, 1633, "kw22");
+  let kw21   = await leerModbusSeguro("holding", "192.168.0.120", 502, 1, 1633, "kw21");
   const kvar22 = await leerModbusSeguro("signedHolding", "192.168.0.130", 502, 1, 1635, "kvar22");
   const kvar21 = await leerModbusSeguro("signedHolding", "192.168.0.120", 502, 1, 1635, "kvar21");
   let   kw1A   = await leerModbusSeguro("holding", "192.168.7.10", 502, 1, 307, "kw1A");
@@ -168,12 +168,30 @@ async function ejecutarLectura() {
   // --- Procesamiento Post-Lectura ---
   // console.log("Procesando valores leídos...");
 
+  // Convertir valores negativos a 0 para kW (no aplica a kvar que pueden ser negativos)
+  if (kw22 !== VALOR_FALLO && kw22 < 0) {
+    console.warn(`  Valor negativo detectado en kw22 (${kw22}). Se registrará como 0.`);
+    kw22 = 0;
+  }
+  if (kw21 !== VALOR_FALLO && kw21 < 0) {
+    console.warn(`  Valor negativo detectado en kw21 (${kw21}). Se registrará como 0.`);
+    kw21 = 0;
+  }
+  if (kw1A !== VALOR_FALLO && kw1A < 0) {
+    console.warn(`  Valor negativo detectado en kw1A (${kw1A}). Se registrará como 0.`);
+    kw1A = 0;
+  }
+  if (kw1B !== VALOR_FALLO && kw1B < 0) {
+    console.warn(`  Valor negativo detectado en kw1B (${kw1B}). Se registrará como 0.`);
+    kw1B = 0;
+  }
+
   // Validar kw1A y kw1B: si la lectura fue exitosa pero el valor está fuera de rango
-  if (kw1A !== VALOR_FALLO && (kw1A < 0 || kw1A > 1000)) {
+  if (kw1A !== VALOR_FALLO && kw1A > 1000) {
     console.warn(`  Valor inválido para kw1A (${kw1A}). Se registrará como ${VALOR_FALLO}.`);
     kw1A = VALOR_FALLO;
   }
-  if (kw1B !== VALOR_FALLO && (kw1B < 0 || kw1B > 1000)) {
+  if (kw1B !== VALOR_FALLO && kw1B > 1000) {
     console.warn(`  Valor inválido para kw1B (${kw1B}). Se registrará como ${VALOR_FALLO}.`);
     kw1B = VALOR_FALLO;
   }
