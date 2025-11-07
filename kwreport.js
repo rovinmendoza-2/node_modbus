@@ -173,6 +173,11 @@ async function ejecutarLectura() {
     console.warn(`  Valor negativo detectado en kw22 (${kw22}). Se registrará como 0.`);
     kw22 = 0;
   }
+  // Si kw22 es menor que 100 (pero no es error), considerarlo ruido de arranque y guardar 0
+  if (kw22 !== VALOR_FALLO && kw22 < 100) {
+    console.warn(`  Valor bajo detectado en kw22 (${kw22} < 100). Se registrará como 0.`);
+    kw22 = 0;
+  }
   if (kw21 !== VALOR_FALLO && kw21 < 0) {
     console.warn(`  Valor negativo detectado en kw21 (${kw21}). Se registrará como 0.`);
     kw21 = 0;
