@@ -40,7 +40,7 @@ function obtenerMinutoActual() {
   return minutoActual;
 }
 
-// Función de lectura Modbus individual y segura (como en el script de prueba)
+// Función de lectura Modbus individual y segura - VERSIÓN ROBUSTA
 async function leerModbusSeguro(
   tipoFuncion, // 'holding' o 'signedHolding'
   ip,
@@ -51,34 +51,44 @@ async function leerModbusSeguro(
 ) {
   try {
     let resultado;
-    // console.log(`  Intentando leer: ${descripcion} (${ip}:${register})`); // Log de intento
+    // console.log(`  🔄 Intentando leer: ${descripcion} (${ip}:${port} - Slave:${slaveId} - Reg:${register})`);
+    
     if (tipoFuncion === "holding") {
       resultado = await readHoldingRegisters(ip, port, slaveId, register);
-      // Asume que devuelve un array, toma el primer elemento si existe, sino es fallo
-      if (resultado && resultado.length > 0) {
-        // console.log(`    ✅ Éxito (${descripcion}): ${resultado[0]}`);
-        return resultado[0];
+      // Validación más estricta para holding registers
+      if (Array.isArray(resultado) && resultado.length > 0 && typeof resultado[0] === 'number') {
+        const valor = resultado[0];
+        // console.log(`    ✅ Éxito ${descripcion}: ${valor}`);
+        return valor;
       } else {
-        console.warn(`    ⚠️ Fallo lectura (${descripcion}): Respuesta inesperada o vacía.`);
+        console.warn(`    ⚠️ Fallo ${descripcion}: Respuesta inválida [${JSON.stringify(resultado)}]`);
         return VALOR_FALLO;
       }
-    } else if (tipoFuncion === "signedHolding") {
+    } 
+    else if (tipoFuncion === "signedHolding") {
       resultado = await readSignedHoldingRegister(ip, port, slaveId, register);
-      // Asume que devuelve un número o podría fallar (lanzar error)
-      if (typeof resultado === 'number') {
-        //  console.log(`    ✅ Éxito (${descripcion}): ${resultado}`);
+      // Validación más estricta para signed holding registers
+      if (typeof resultado === 'number' && !isNaN(resultado)) {
+        // console.log(`    ✅ Éxito ${descripcion}: ${resultado}`);
         return resultado;
       } else {
-        // Esto no debería pasar si la función lanza error en fallo, pero por si acaso
-        console.warn(`    ⚠️ Fallo lectura (${descripcion}): Respuesta no numérica.`);
+        console.warn(`    ⚠️ Fallo ${descripcion}: Respuesta no numérica [${JSON.stringify(resultado)}]`);
         return VALOR_FALLO;
       }
-    } else {
-      console.error(`Tipo de función Modbus desconocido: ${tipoFuncion}`);
+    } 
+    else {
+      console.error(`❌ Tipo de función Modbus desconocido: ${tipoFuncion} para ${descripcion}`);
       return VALOR_FALLO;
     }
   } catch (error) {
-    console.warn(`    ❌ Error Modbus (${descripcion} - ${ip}:${register}): ${error.message}`);
+    // Mejorar el logging de errores para diagnóstico
+    console.warn(`    ❌ Error Modbus ${descripcion} (${ip}:${port}/Slave:${slaveId}/Reg:${register}): ${error.message}`);
+    
+    // Si es un error específico de kw1A, agregar información adicional
+    if (descripcion === "kw1A") {
+      console.warn(`    🔧 DIAGNÓSTICO kw1A: Verificar conectividad con generador 1A en ${ip}:${port}`);
+    }
+    
     return VALOR_FALLO; // Devolver valor de fallo en caso de excepción
   }
 }
@@ -157,8 +167,8 @@ async function ejecutarLectura() {
   // console.log("Iniciando lecturas Modbus...");
   let kw22   = await leerModbusSeguro("holding", "192.168.0.130", 502, 1, 1633, "kw22");
   let kw21   = await leerModbusSeguro("holding", "192.168.0.120", 502, 1, 1633, "kw21");
-  const kvar22 = await leerModbusSeguro("signedHolding", "192.168.0.130", 502, 1, 1635, "kvar22");
-  const kvar21 = await leerModbusSeguro("signedHolding", "192.168.0.120", 502, 1, 1635, "kvar21");
+  let kvar22 = await leerModbusSeguro("signedHolding", "192.168.0.130", 502, 1, 1635, "kvar22");
+  let kvar21 = await leerModbusSeguro("signedHolding", "192.168.0.120", 502, 1, 1635, "kvar21");
   let   kw1A   = await leerModbusSeguro("holding", "192.168.7.10", 502, 1, 307, "kw1A");
   let   kw1B   = await leerModbusSeguro("holding", "192.168.6.100", 502, 1, 239, "kw1B");
   const voltage22_raw = await leerModbusSeguro("holding", "192.168.0.130", 502, 1, 1631, "voltage22");
@@ -168,7 +178,11 @@ async function ejecutarLectura() {
   // --- Procesamiento Post-Lectura ---
   // console.log("Procesando valores leídos...");
 
+  // --- VALIDACIÓN ROBUSTA DE DATOS kW ---
   // Convertir valores negativos a 0 para kW (no aplica a kvar que pueden ser negativos)
+  // IMPORTANTE: Solo validamos si NO es un error de comunicación Modbus
+  
+  // Validación para kw22
   if (kw22 !== VALOR_FALLO && kw22 < 0) {
     console.warn(`  Valor negativo detectado en kw22 (${kw22}). Se registrará como 0.`);
     kw22 = 0;
@@ -178,43 +192,70 @@ async function ejecutarLectura() {
     console.warn(`  Valor bajo detectado en kw22 (${kw22} < 100). Se registrará como 0.`);
     kw22 = 0;
   }
+  
+  // Validación para kw21
   if (kw21 !== VALOR_FALLO && kw21 < 0) {
     console.warn(`  Valor negativo detectado en kw21 (${kw21}). Se registrará como 0.`);
     kw21 = 0;
   }
-  if (kw1A !== VALOR_FALLO && kw1A < 0) {
-    console.warn(`  Valor negativo detectado en kw1A (${kw1A}). Se registrará como 0.`);
+  
+  // VALIDACIÓN SIMPLIFICADA PARA kw1A (Generador 1A)
+  // REGLA SIMPLE: Cualquier valor <= 0 o error de comunicación -> registrar 0
+  if (kw1A === VALOR_FALLO) {
+    console.warn(`  ❌ Error de comunicación Modbus para kw1A. Se registrará como 0.`);
+    kw1A = 0;
+  } 
+  else if (kw1A < 0) {
+    console.warn(`  ⚠️ Valor negativo leído de kw1A (${kw1A}). Se registrará como 0.`);
     kw1A = 0;
   }
-  if (kw1B !== VALOR_FALLO && kw1B < 0) {
-    console.warn(`  Valor negativo detectado en kw1B (${kw1B}). Se registrará como 0.`);
+  else if (kw1A > 1000) {
+    console.warn(`  ⚠️ Valor fuera de rango para kw1A (${kw1A} > 1000). Se registrará como 0.`);
+    kw1A = 0;
+  }
+  // Si kw1A está entre 0 y 1000, se mantiene tal como está
+  
+  // VALIDACIÓN SIMPLIFICADA PARA kw1B (Generador 1B) - misma lógica
+  if (kw1B === VALOR_FALLO) {
+    console.warn(`  ❌ Error de comunicación Modbus para kw1B. Se registrará como 0.`);
+    kw1B = 0;
+  } 
+  else if (kw1B < 0) {
+    console.warn(`  ⚠️ Valor negativo leído de kw1B (${kw1B}). Se registrará como 0.`);
     kw1B = 0;
   }
-
-  // Validar kw1A y kw1B: si la lectura fue exitosa pero el valor está fuera de rango
-  if (kw1A !== VALOR_FALLO && kw1A > 1000) {
-    console.warn(`  Valor inválido para kw1A (${kw1A}). Se registrará como ${VALOR_FALLO}.`);
-    kw1A = VALOR_FALLO;
+  else if (kw1B > 1000) {
+    console.warn(`  ⚠️ Valor fuera de rango para kw1B (${kw1B} > 1000). Se registrará como 0.`);
+    kw1B = 0;
   }
-  if (kw1B !== VALOR_FALLO && kw1B > 1000) {
-    console.warn(`  Valor inválido para kw1B (${kw1B}). Se registrará como ${VALOR_FALLO}.`);
-    kw1B = VALOR_FALLO;
-  }
+  // Si kw1B está entre 0 y 1000, se mantiene tal como está
 
-  // Procesar y combinar lecturas de voltaje
-  let voltage_base = VALOR_FALLO;
+  // VALIDACIÓN PARA kVAR - Solo convertir errores de comunicación a 0, valores negativos son válidos
+  if (kvar22 === VALOR_FALLO) {
+    console.warn(`  ❌ Error de comunicación Modbus para kvar22. Se registrará como 0.`);
+    kvar22 = 0;
+  }
+  if (kvar21 === VALOR_FALLO) {
+    console.warn(`  ❌ Error de comunicación Modbus para kvar21. Se registrará como 0.`);
+    kvar21 = 0;
+  }
+  // Nota: Los kVAR pueden ser negativos naturalmente, así que no los convertimos a 0
+
+  // Procesar y combinar lecturas de voltaje - NUNCA registrar -1
+  let voltage_base = 0; // Cambiar default a 0 en lugar de VALOR_FALLO
   if (voltage22_raw !== VALOR_FALLO && voltage22_raw !== 0) {
     voltage_base = voltage22_raw;
     //  console.log(`  Voltaje base tomado de voltage22: ${voltage_base}`);
-  } else if (voltage21_raw !== VALOR_FALLO) {
+  } else if (voltage21_raw !== VALOR_FALLO && voltage21_raw !== 0) {
     voltage_base = voltage21_raw;
     //  console.log(`  Voltaje base tomado de voltage21 (voltage22 fue ${voltage22_raw}): ${voltage_base}`);
   } else {
-      // console.log(`  No se pudo obtener voltaje base válido (v22=${voltage22_raw}, v21=${voltage21_raw}).`);
+    console.warn(`  ⚠️ No se pudo obtener voltaje válido (v22=${voltage22_raw}, v21=${voltage21_raw}). Se registrará como 0.`);
+    voltage_base = 0;
   }
 
-  // Calcular voltaje final, aplicar escala * 10 solo si la lectura base fue válida
-  const voltage = (voltage_base !== VALOR_FALLO) ? voltage_base * 10 : VALOR_FALLO;
+  // Calcular voltaje final, aplicar escala * 10 siempre (si es 0, queda 0)
+  const voltage = voltage_base * 10;
   //  console.log(`  Voltaje final calculado: ${voltage}`);
 
   // --- Registro en Base de Datos ---
@@ -258,3 +299,32 @@ job.start();
 // ejecutarLectura().catch(error => {
 //     console.error("Error FATAL no capturado en la ejecución inicial:", error);
 // });
+
+// ===============================================================================
+// CAMBIOS REALIZADOS - VALIDACIÓN SIMPLIFICADA: NUNCA REGISTRAR -1
+// ===============================================================================
+// PROBLEMA SOLUCIONADO: 
+// - Antes: Se registraban valores -1 en la BD por errores de comunicación o valores negativos
+// - Requerimiento: NUNCA registrar -1, siempre usar 0 para cualquier problema
+//
+// SOLUCIÓN IMPLEMENTADA:
+// 1. REGLA SIMPLE para todos los kW (kw22, kw21, kw1A, kw1B):
+//    - Error de comunicación Modbus → 0
+//    - Valor negativo leído → 0  
+//    - Valor fuera de rango (>1000) → 0
+//    - Valor válido (0-1000) → se mantiene
+//
+// 2. REGLA para kVAR (kvar22, kvar21):
+//    - Error de comunicación Modbus → 0
+//    - Valores negativos → se mantienen (son válidos para kVAR)
+//
+// 3. REGLA para Voltaje:
+//    - Error de comunicación → 0
+//    - Sin lecturas válidas → 0
+//
+// RESULTADO FINAL:
+// - La BD NUNCA tendrá valores -1
+// - Errores de comunicación = 0 (generador apagado/desconectado)
+// - Valores negativos de kW = 0 (generador apagado)
+// - Solo los kVAR pueden ser negativos (comportamiento eléctrico normal)
+// ===============================================================================

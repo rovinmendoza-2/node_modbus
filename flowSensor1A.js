@@ -7,8 +7,8 @@ import cron from "cron";
 function convertTo32BitFloatBigEndian(high, low) {
   const buffer = Buffer.alloc(4);
   buffer.writeUInt16BE(high, 0);
-  buffer.writeUInt16BE(low, 2); 
-  return buffer.readFloatBE(0); 
+  buffer.writeUInt16BE(low, 2);
+  return buffer.readFloatBE(0);
 }
 
 async function main() {
@@ -30,7 +30,6 @@ async function main() {
   );
   const calidadRaw = await readHoldingRegisters(ip, port, slaveId, 91);
   const kw = await readHoldingRegisters("192.168.7.10", 502, 1, 307);
-
   if (registerValues && registerValues.length >= 2) {
     const lowRegisterValue = registerValues[0];
     const highRegisterValue = registerValues[1];
